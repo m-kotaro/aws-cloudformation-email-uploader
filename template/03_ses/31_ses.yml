@@ -7,29 +7,84 @@ Parameters:
     Default: "email-uploader"
   SystemEnv:
     Type: String
+  HostedZoneName:
+    Type: String
 
 Resources:
-  ReceiptRuleSet:
-    Type: AWS::SES::ReceiptRuleSet
+  IAMRoleSESReceiptRule:
+    Type: AWS::IAM::Role
     Properties:
-      RuleSetName: !Sub "ses-${SystemCode}-${SystemEnv}-ruleset"
+      RoleName: !Sub "role-${SystemCode}-${SystemEnv}-receipt-rule"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ses.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: S3Access
+                Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub "arn:aws:s3:::s3-${SystemCode}-${SystemEnv}-ses/*"
 
-  # ReceiptRule:
-  #   Type: AWS::SES::ReceiptRule
-  #   Properties:
-  #     RuleSetName: !Ref ReceiptRuleSet
-  #     Rule:
-  #       Name: ReceiveRule
-  #       Enabled: true
-  #       Recipients:
-  #         - !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-name}}"
-  #       Actions:
-  #         - S3Action:
-  #             BucketName: !Sub "s3-${SystemCode}-${SystemEnv}-ses"
-  #             ObjectKeyPrefix: "emails/"
-  #       ScanEnabled: true
-  #       TlsPolicy: Optional
+  SESReceiptRuleSet:
+    Type: "AWS::SES::ReceiptRuleSet"
+    Properties:
+      RuleSetName: !Sub "ses-${SystemCode}-${SystemEnv}-receipt-ruleset"
 
-Outputs:
-  RuleSetName:
-    Value: !Ref RuleSetName
+  SESReceiptRule:
+    Type: "AWS::SES::ReceiptRule"
+    Properties:
+      RuleSetName: !Ref SESReceiptRuleSet
+      Rule:
+        Name: ReceiveRule
+        Enabled: true
+        # Recipients:
+        #   - !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-name}}"
+        Actions:
+          - S3Action:
+              BucketName: !Sub "s3-${SystemCode}-${SystemEnv}-ses"
+              ObjectKeyPrefix: "emails/"
+              IamRoleArn: !GetAtt IAMRoleSESReceiptRule.Arn
+        ScanEnabled: true
+        TlsPolicy: Optional
+
+  SESDomainIdentity:
+    Type: "AWS::SES::EmailIdentity"
+    Properties:
+      EmailIdentity: !Ref HostedZoneName
+
+  DKIMRecord1:
+    Type: "AWS::Route53::RecordSet"
+    Properties:
+      HostedZoneId: !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-id}}"
+      Name: !Sub "${SESDomainIdentity.DkimDNSTokenName1}._domainkey.${HostedZoneName}"
+      Type: CNAME
+      TTL: 300
+      ResourceRecords:
+        - !Sub "${SESDomainIdentity.DkimDNSTokenName1}.dkim.amazonses.com"
+
+  DKIMRecord2:
+    Type: "AWS::Route53::RecordSet"
+    Properties:
+      HostedZoneId: !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-id}}"
+      Name: !Sub "${SESDomainIdentity.DkimDNSTokenName2}._domainkey.${HostedZoneName}"
+      Type: CNAME
+      TTL: 300
+      ResourceRecords:
+        - !Sub "${SESDomainIdentity.DkimDNSTokenName2}.dkim.amazonses.com"
+
+  DKIMRecord3:
+    Type: "AWS::Route53::RecordSet"
+    Properties:
+      HostedZoneId: !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-id}}"
+      Name: !Sub "${SESDomainIdentity.DkimDNSTokenName3}._domainkey.${HostedZoneName}"
+      Type: CNAME
+      TTL: 300
+      ResourceRecords:
+        - !Sub "${SESDomainIdentity.DkimDNSTokenName3}.dkim.amazonses.com"
