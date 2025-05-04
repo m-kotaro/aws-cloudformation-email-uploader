@@ -1,0 +1,35 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: SES Email Receiving Setup
+
+Parameters:
+  SystemCode:
+    Type: "String"
+    Default: "email-uploader"
+  SystemEnv:
+    Type: String
+
+Resources:
+  ReceiptRuleSet:
+    Type: AWS::SES::ReceiptRuleSet
+    Properties:
+      RuleSetName: !Sub "ses-${SystemCode}-${SystemEnv}-ruleset"
+
+  # ReceiptRule:
+  #   Type: AWS::SES::ReceiptRule
+  #   Properties:
+  #     RuleSetName: !Ref ReceiptRuleSet
+  #     Rule:
+  #       Name: ReceiveRule
+  #       Enabled: true
+  #       Recipients:
+  #         - !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-name}}"
+  #       Actions:
+  #         - S3Action:
+  #             BucketName: !Sub "s3-${SystemCode}-${SystemEnv}-ses"
+  #             ObjectKeyPrefix: "emails/"
+  #       ScanEnabled: true
+  #       TlsPolicy: Optional
+
+Outputs:
+  RuleSetName:
+    Value: !Ref RuleSetName
