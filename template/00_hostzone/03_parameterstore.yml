@@ -1,0 +1,29 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Parameter for HostedZone info."
+
+Parameters:
+  SystemCode:
+    Type: "String"
+    Default: "email-uploader"
+  SystemEnv:
+    Type: "String"
+  HostedZoneId:
+    Type: "String"
+  HostedZoneName:
+    Type: "String"
+
+Resources:
+  SSMParameterHostedZoneName:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Name: !Sub "param-${SystemCode}-${SystemEnv}-hostedzone-name"
+      Type: "String"
+      Value: !Ref HostedZoneName
+
+  SSMParameterHostedZoneId:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Name: !Sub "param-${SystemCode}-${SystemEnv}-hostedzone-id"
+      Type: "String"
+      Value: !Ref HostedZoneId
+
