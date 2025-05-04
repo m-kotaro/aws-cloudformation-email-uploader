@@ -12,11 +12,11 @@ Resources:
   ACM:
     Type: "AWS::CertificateManager::Certificate"
     Properties:
-      DomainName: !Sub { Fn::ImportValue: !Sub "hostedzone-${SystemCode}-${SystemEnv}-name" }
+      DomainName: { Fn::ImportValue: !Sub "hostedzone-${SystemCode}-${SystemEnv}-name" }
       ValidationMethod: "DNS"
       DomainValidationOptions:
-        - DomainName: !Sub { Fn::ImportValue: !Sub "hostedzone-${SystemCode}-${SystemEnv}-name" }
-          HostedZoneId: !Sub { Fn::ImportValue: !Sub "hostedzone-${SystemCode}-${SystemEnv}-id" }
+        - DomainName: { Fn::ImportValue: !Sub "hostedzone-${SystemCode}-${SystemEnv}-name" }
+          HostedZoneId: { Fn::ImportValue: !Sub "hostedzone-${SystemCode}-${SystemEnv}-id" }
 
 Outputs:
   CertificateArn:
