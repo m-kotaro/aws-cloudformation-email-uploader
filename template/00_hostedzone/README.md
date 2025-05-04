@@ -25,7 +25,7 @@ DOMAIN_NAME=# your Domain
 ### CloudFormation実行
 
 ```bash
-aws cloudformation create-stack --stack-name stack-email-uploader-$SYSTEM_ENV-hostedzone --template-body file://template/00_hostedzone/01_hostedzone.yml --parameters ParameterKey=SystemEnv,ParameterValue=$SYSTEM_ENV ParameterKey=DomainName,ParameterValue=$DOMAIN_NAME
+aws cloudformation create-stack --stack-name stack-email-uploader-$SYSTEM_ENV-hostedzone --template-body file://template/00_hostedzone/01_hostedzone.yml --parameters ParameterKey=SystemEnv,ParameterValue=$SYSTEM_ENV ParameterKey=DomainName,ParameterValue=$DOMAIN_NAME --region us-east-1
 ```
 
 ### ドメイン登録
