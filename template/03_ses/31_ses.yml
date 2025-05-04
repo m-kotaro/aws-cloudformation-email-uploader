@@ -7,7 +7,7 @@ Parameters:
     Default: "email-uploader"
   SystemEnv:
     Type: String
-  HostedZoneName:
+  DomainName:
     Type: String
 
 Resources:
@@ -44,8 +44,8 @@ Resources:
       Rule:
         Name: ReceiveRule
         Enabled: true
-        # Recipients:
-        #   - !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-name}}"
+        Recipients:
+          - !Ref DomainName
         Actions:
           - S3Action:
               BucketName: !Sub "s3-${SystemCode}-${SystemEnv}-ses"
@@ -57,13 +57,15 @@ Resources:
   SESDomainIdentity:
     Type: "AWS::SES::EmailIdentity"
     Properties:
-      EmailIdentity: !Ref HostedZoneName
+      EmailIdentity: !Ref DomainName
+      DkimAttributes:
+        SigningEnabled: true
 
   DKIMRecord1:
     Type: "AWS::Route53::RecordSet"
     Properties:
       HostedZoneId: !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-id}}"
-      Name: !Sub "${SESDomainIdentity.DkimDNSTokenName1}._domainkey.${HostedZoneName}"
+      Name: !Sub "${SESDomainIdentity.DkimDNSTokenName1}._domainkey.${DomainName}"
       Type: CNAME
       TTL: 300
       ResourceRecords:
@@ -73,7 +75,7 @@ Resources:
     Type: "AWS::Route53::RecordSet"
     Properties:
       HostedZoneId: !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-id}}"
-      Name: !Sub "${SESDomainIdentity.DkimDNSTokenName2}._domainkey.${HostedZoneName}"
+      Name: !Sub "${SESDomainIdentity.DkimDNSTokenName2}._domainkey.${DomainName}"
       Type: CNAME
       TTL: 300
       ResourceRecords:
@@ -83,8 +85,18 @@ Resources:
     Type: "AWS::Route53::RecordSet"
     Properties:
       HostedZoneId: !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-id}}"
-      Name: !Sub "${SESDomainIdentity.DkimDNSTokenName3}._domainkey.${HostedZoneName}"
+      Name: !Sub "${SESDomainIdentity.DkimDNSTokenName3}._domainkey.${DomainName}"
       Type: CNAME
       TTL: 300
       ResourceRecords:
         - !Sub "${SESDomainIdentity.DkimDNSTokenName3}.dkim.amazonses.com"
+
+  MXRecordSet:
+    Type: "AWS::Route53::RecordSet"
+    Properties:
+      HostedZoneId: !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-id}}"
+      Name: !Ref DomainName
+      Type: MX
+      TTL: 300
+      ResourceRecords:
+        - !Sub "10 inbound-smtp.${AWS::Region}.amazonaws.com"
