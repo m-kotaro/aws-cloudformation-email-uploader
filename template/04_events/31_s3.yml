@@ -1,0 +1,42 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "S3"
+
+Parameters:
+  SystemCode:
+    Type: "String"
+    Default: "email-uploader"
+  SystemEnv:
+    Type: "String"
+
+Resources:
+  S3BucketContentsAsset:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: !Sub "s3-${SystemCode}-${SystemEnv}-contents-asset"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+
+  S3BucketSes:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: !Sub "s3-${SystemCode}-${SystemEnv}-ses"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteAfter30Days
+            Status: Enabled
+            Prefix: ""
+            ExpirationInDays: 30
+
+Outputs:
+  S3BucketSes:
+    Value: !Ref S3BucketSes
+    Export:
+      Name: !Sub "s3-${SystemCode}-${SystemEnv}-ses"
