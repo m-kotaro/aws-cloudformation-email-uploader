@@ -13,8 +13,6 @@ DNSおよびドメインの登録と証明書の構築。
 
 ## 環境変数設定
 
-下記コマンドで環境変数を設定する。
-
 ```bash
 SYSTEM_ENV=# your system env
 DOMAIN_NAME=# your Domain
