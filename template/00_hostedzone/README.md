@@ -35,11 +35,11 @@ aws cloudformation wait stack-create-complete --stack-name stack-email-uploader-
 下記コマンドを実行
 
 ```bash
-export OUTPUTS=$(aws cloudformation describe-stacks --stack-name stack-email-uploader-$SYSTEM_ENV-hostedzone --query "Stacks[0].Outputs" --output json --region us-east-1)
+export HOSTEDZONE_OUTPUTS=$(aws cloudformation describe-stacks --stack-name stack-email-uploader-$SYSTEM_ENV-hostedzone --query "Stacks[0].Outputs" --output json --region us-east-1)
 
-export HOSTEDZONE_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="HostedZoneId") | .OutputValue')
-export HOSTEDZONE_NAME=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="HostedZoneName") | .OutputValue')
-export HOSTEDZONE_NS=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="HostedZoneNs") | .OutputValue')
+export HOSTEDZONE_ID=$(echo "$HOSTEDZONE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="HostedZoneId") | .OutputValue')
+export HOSTEDZONE_NAME=$(echo "$HOSTEDZONE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="HostedZoneName") | .OutputValue')
+export HOSTEDZONE_NS=$(echo "$HOSTEDZONE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="HostedZoneNs") | .OutputValue')
 
 echo -e "## HostedZoneNs\n$(echo "$HOSTEDZONE_NS" | tr ',' '\n')\n\n## HostedZoneName\n$HOSTEDZONE_NAME"
 
@@ -62,4 +62,23 @@ echo -e "## HostedZoneNs\n$(echo "$HOSTEDZONE_NS" | tr ',' '\n')\n\n## HostedZon
 ```bash
 aws cloudformation create-stack --stack-name stack-email-uploader-$SYSTEM_ENV-acm --template-body file://template/00_hostedzone/02_acm.yml --parameters ParameterKey=SystemEnv,ParameterValue=$SYSTEM_ENV --region us-east-1
 aws cloudformation wait stack-create-complete --stack-name stack-email-uploader-$SYSTEM_ENV-acm --region us-east-1
+
+```
+
+---
+
+## 03_parameterstore
+
+### CloudFormation実行
+
+```bash
+export HOSTEDZONE_OUTPUTS=$(aws cloudformation describe-stacks --stack-name stack-email-uploader-$SYSTEM_ENV-hostedzone --query "Stacks[0].Outputs" --output json --region us-east-1)
+
+export HOSTEDZONE_ID=$(echo "$HOSTEDZONE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="HostedZoneId") | .OutputValue')
+export HOSTEDZONE_NAME=$(echo "$HOSTEDZONE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="HostedZoneName") | .OutputValue')
+
+aws cloudformation create-stack --stack-name stack-email-uploader-$SYSTEM_ENV-parameterstore --template-body file://template/00_hostedzone/03_parameterstore.yml --parameters ParameterKey=SystemEnv,ParameterValue=$SYSTEM_ENV ParameterKey=HostedZoneId,ParameterValue=$HOSTEDZONE_ID ParameterKey=HostedZoneName,ParameterValue=$HOSTEDZONE_NAME
+
+aws cloudformation wait stack-create-complete --stack-name stack-email-uploader-$SYSTEM_ENV-parameterstore
+
 ```
