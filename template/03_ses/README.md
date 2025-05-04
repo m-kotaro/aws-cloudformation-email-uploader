@@ -24,10 +24,9 @@ SYSTEM_ENV=# your system env
 ```bash
 export HOSTEDZONE_OUTPUTS=$(aws cloudformation describe-stacks --stack-name stack-email-uploader-$SYSTEM_ENV-hostedzone --query "Stacks[0].Outputs" --output json --region us-east-1)
 
-export HOSTEDZONE_ID=$(echo "$HOSTEDZONE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="HostedZoneId") | .OutputValue')
 export HOSTEDZONE_NAME=$(echo "$HOSTEDZONE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="HostedZoneName") | .OutputValue')
 
-aws cloudformation create-stack --stack-name stack-email-uploader-$SYSTEM_ENV-ses --template-body file://template/03_ses/31_ses.yml --parameters ParameterKey=SystemEnv,ParameterValue=$SYSTEM_ENV ParameterKey=HostedZoneId,ParameterValue=$HOSTEDZONE_ID ParameterKey=HostedZoneName,ParameterValue=$HOSTEDZONE_NAME --capabilities CAPABILITY_IAM
+aws cloudformation create-stack --stack-name stack-email-uploader-$SYSTEM_ENV-ses --template-body file://template/03_ses/31_ses.yml --parameters ParameterKey=SystemEnv,ParameterValue=$SYSTEM_ENV ParameterKey=HostedZoneName,ParameterValue=$HOSTEDZONE_NAME --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM
 aws cloudformation wait stack-create-complete --stack-name stack-email-uploader-$SYSTEM_ENV-ses
 
 ```
