@@ -40,3 +40,8 @@ Outputs:
     Value: !Ref S3BucketSes
     Export:
       Name: !Sub "s3-${SystemCode}-${SystemEnv}-ses"
+  S3BucketSesArn:
+    Value: !GetAtt S3BucketSes.Arn
+    Export:
+      Name: !Sub "s3-${SystemCode}-${SystemEnv}-ses-arn"
+
