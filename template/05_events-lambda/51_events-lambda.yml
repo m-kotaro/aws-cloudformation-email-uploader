@@ -1,0 +1,75 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "EventBridge and Lambda with IAMRole"
+
+Parameters:
+  SystemCode:
+    Type: "String"
+    Default: "email-uploader"
+  SystemEnv:
+    Type: "String"
+
+Resources:
+  MyLambdaRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: my-s3-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaS3EventPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: arn:aws:logs:*:*:*
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub "${MyBucket.Arn}/*"
+
+  MyLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: my-s3-eventbridge-lambda
+      Handler: index.handler
+      Role: !GetAtt MyLambdaRole.Arn
+      Runtime: python3.13
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              print("hello world")
+
+  S3EventRule:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Name: s3-put-object-rule
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - Object Created
+        detail:
+          bucket:
+            name:
+              - { Fn::ImportValue: !Sub "s3-${SystemCode}-${SystemEnv}-ses" }
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt MyLambdaFunction.Arn
+          Id: TargetLambda
+
+  LambdaInvokePermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !Ref MyLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt S3EventRule.Arn
