@@ -34,7 +34,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - s3:GetObject
-                Resource: !Sub "${MyBucket.Arn}/*"
+                Resource: { Fn::ImportValue: !Sub "s3-${SystemCode}-${SystemEnv}-ses-arn" }
 
   MyLambdaFunction:
     Type: "AWS::Lambda::Function"
