@@ -2,7 +2,7 @@
 
 ## 概要
 
-S3の構築。
+CDNの構築。
 
 ---
 
@@ -17,6 +17,8 @@ SYSTEM_ENV=# your system env
 USER=# your credential user
 PASSWORD=# your credential password
 ```
+
+---
 
 ## 41_cloudfront
 

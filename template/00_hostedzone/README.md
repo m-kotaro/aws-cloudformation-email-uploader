@@ -8,7 +8,6 @@ DNSおよびドメインの登録と証明書の構築。
 
 ## 構築リソース
 
-
 ---
 
 ## 環境変数設定
@@ -17,6 +16,8 @@ DNSおよびドメインの登録と証明書の構築。
 SYSTEM_ENV=# your system env
 DOMAIN_NAME=# your Domain
 ```
+
+---
 
 ## 01_hostedzone
 
