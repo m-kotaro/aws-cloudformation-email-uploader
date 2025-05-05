@@ -26,6 +26,8 @@ SYSTEM_ENV=# your system env
 ```bash
 aws cloudformation create-stack --stack-name stack-email-uploader-$SYSTEM_ENV-ses --template-body file://template/03_ses/31_ses.yml --parameters ParameterKey=SystemEnv,ParameterValue=$SYSTEM_ENV --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM
 aws cloudformation wait stack-create-complete --stack-name stack-email-uploader-$SYSTEM_ENV-ses
+export SES_RECEPTION_RULE_SET=$(aws cloudformation describe-stacks --stack-name stack-email-uploader-$SYSTEM_ENV-ses --query "Stacks[0].Outputs" --output json | jq -r '.[] | select(.OutputKey=="HostedZoneId") | .OutputValue')
+aws ses set-active-receipt-rule-set --rule-set-name $SES_RECEPTION_RULE_SET
 
 ```
 
