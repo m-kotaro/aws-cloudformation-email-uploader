@@ -98,3 +98,9 @@ Resources:
       TTL: 1800
       ResourceRecords:
         - !Sub "10 inbound-smtp.${AWS::Region}.amazonaws.com"
+
+Outputs:
+  SESReceiptRuleSet:
+    Value: !Ref SESReceiptRuleSet
+    Export:
+      Name: !Sub "ses-${SystemCode}-${SystemEnv}-receipt-ruleset"
