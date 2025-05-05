@@ -63,49 +63,31 @@ Resources:
     Type: "AWS::Route53::RecordSet"
     Properties:
       HostedZoneId: !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-id}}"
-      # Name: !Sub "${SESDomainIdentity.DkimDNSTokenName1}._domainkey.${DomainName}"
-      Name:
-        !Join
-          - ""
-          - - !GetAtt SESDomainIdentity.DkimDNSTokenName1
-            - ._domainkey.
-            - !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-name}}"
+      Name: !GetAtt SESDomainIdentity.DkimDNSTokenName1
       Type: CNAME
       TTL: 300
       ResourceRecords:
-        - !Sub "${SESDomainIdentity.DkimDNSTokenName1}.dkim.amazonses.com"
+        - !GetAtt SESDomainIdentity.DkimDNSTokenValue1
 
   DKIMRecord2:
     Type: "AWS::Route53::RecordSet"
     Properties:
       HostedZoneId: !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-id}}"
-      # Name: !Sub "${SESDomainIdentity.DkimDNSTokenName2}._domainkey.${DomainName}"
-      Name:
-        !Join
-          - ""
-          - - !GetAtt SESDomainIdentity.DkimDNSTokenName2
-            - ._domainkey.
-            - !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-name}}"
+      Name: !GetAtt SESDomainIdentity.DkimDNSTokenName2
       Type: CNAME
-      TTL: 300
+      TTL: 1800
       ResourceRecords:
-        - !Sub "${SESDomainIdentity.DkimDNSTokenName2}.dkim.amazonses.com"
+        - !GetAtt SESDomainIdentity.DkimDNSTokenValue2
 
   DKIMRecord3:
     Type: "AWS::Route53::RecordSet"
     Properties:
       HostedZoneId: !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-id}}"
-      # Name: !Sub "${SESDomainIdentity.DkimDNSTokenName3}._domainkey.${DomainName}"
-      Name:
-        !Join
-          - ""
-          - - !GetAtt SESDomainIdentity.DkimDNSTokenName3
-            - ._domainkey.
-            - !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-name}}"
+      Name: !GetAtt SESDomainIdentity.DkimDNSTokenName3
       Type: CNAME
-      TTL: 300
+      TTL: 1800
       ResourceRecords:
-        - !Sub "${SESDomainIdentity.DkimDNSTokenName3}.dkim.amazonses.com"
+        - !GetAtt SESDomainIdentity.DkimDNSTokenValue3
 
   MXRecordSet:
     Type: "AWS::Route53::RecordSet"
@@ -113,6 +95,6 @@ Resources:
       HostedZoneId: !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-id}}"
       Name: !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-name}}"
       Type: MX
-      TTL: 300
+      TTL: 1800
       ResourceRecords:
         - !Sub "10 inbound-smtp.${AWS::Region}.amazonaws.com"

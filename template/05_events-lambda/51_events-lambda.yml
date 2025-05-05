@@ -9,10 +9,16 @@ Parameters:
     Type: "String"
 
 Resources:
-  MyLambdaRole:
+  LogsLogGroupLambdaSesFileUpload:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/lambda-${SystemCode}-${SystemEnv}-file-upload"
+      RetentionInDays: 30
+
+  IAMRoleLambdaSesFileUpload:
     Type: "AWS::IAM::Role"
     Properties:
-      RoleName: my-s3-lambda-role
+      RoleName: !Sub "role-${SystemCode}-${SystemEnv}-file-upload-lambda"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -27,7 +33,6 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
-                  - logs:CreateLogGroup
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: arn:aws:logs:*:*:*
@@ -36,40 +41,40 @@ Resources:
                   - s3:GetObject
                 Resource: { Fn::ImportValue: !Sub "s3-${SystemCode}-${SystemEnv}-ses-arn" }
 
-  MyLambdaFunction:
+  LambdaFunctionSesFileUpload:
     Type: "AWS::Lambda::Function"
     Properties:
-      FunctionName: my-s3-eventbridge-lambda
+      FunctionName: !Sub "lambda-${SystemCode}-${SystemEnv}-file-upload"
       Handler: index.handler
-      Role: !GetAtt MyLambdaRole.Arn
+      Role: !GetAtt IAMRoleLambdaSesFileUpload.Arn
       Runtime: python3.13
       Code:
         ZipFile: |
           def handler(event, context):
               print("hello world")
 
-  S3EventRule:
+  EventsRuleSesS3FileCreated:
     Type: "AWS::Events::Rule"
     Properties:
-      Name: s3-put-object-rule
+      Name: !Sub "events-${SystemCode}-${SystemEnv}-file-created"
       EventPattern:
         source:
           - aws.s3
         detail-type:
-          - Object Created
+          - "Object Created"
         detail:
           bucket:
             name:
               - { Fn::ImportValue: !Sub "s3-${SystemCode}-${SystemEnv}-ses" }
       State: ENABLED
       Targets:
-        - Arn: !GetAtt MyLambdaFunction.Arn
+        - Arn: !GetAtt LambdaFunctionSesFileUpload.Arn
           Id: TargetLambda
 
   LambdaInvokePermission:
     Type: "AWS::Lambda::Permission"
     Properties:
-      FunctionName: !Ref MyLambdaFunction
+      FunctionName: !Ref LambdaFunctionSesFileUpload
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
-      SourceArn: !GetAtt S3EventRule.Arn
+      SourceArn: !GetAtt EventsRuleSesS3FileCreated.Arn
