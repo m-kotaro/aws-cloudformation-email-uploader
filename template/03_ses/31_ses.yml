@@ -7,8 +7,6 @@ Parameters:
     Default: "email-uploader"
   SystemEnv:
     Type: String
-  DomainName:
-    Type: String
 
 Resources:
   IAMRoleSESReceiptRule:
@@ -45,7 +43,7 @@ Resources:
         Name: ReceiveRule
         Enabled: true
         Recipients:
-          - !Ref DomainName
+          - !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-name}}"
         Actions:
           - S3Action:
               BucketName: !Sub "s3-${SystemCode}-${SystemEnv}-ses"
@@ -57,7 +55,7 @@ Resources:
   SESDomainIdentity:
     Type: "AWS::SES::EmailIdentity"
     Properties:
-      EmailIdentity: !Ref DomainName
+      EmailIdentity: !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-name}}"
       DkimAttributes:
         SigningEnabled: true
 
@@ -65,7 +63,13 @@ Resources:
     Type: "AWS::Route53::RecordSet"
     Properties:
       HostedZoneId: !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-id}}"
-      Name: !Sub "${SESDomainIdentity.DkimDNSTokenName1}._domainkey.${DomainName}"
+      # Name: !Sub "${SESDomainIdentity.DkimDNSTokenName1}._domainkey.${DomainName}"
+      Name:
+        !Join
+          - ""
+          - - !GetAtt SESDomainIdentity.DkimDNSTokenName1
+            - ._domainkey.
+            - !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-name}}"
       Type: CNAME
       TTL: 300
       ResourceRecords:
@@ -75,7 +79,13 @@ Resources:
     Type: "AWS::Route53::RecordSet"
     Properties:
       HostedZoneId: !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-id}}"
-      Name: !Sub "${SESDomainIdentity.DkimDNSTokenName2}._domainkey.${DomainName}"
+      # Name: !Sub "${SESDomainIdentity.DkimDNSTokenName2}._domainkey.${DomainName}"
+      Name:
+        !Join
+          - ""
+          - - !GetAtt SESDomainIdentity.DkimDNSTokenName2
+            - ._domainkey.
+            - !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-name}}"
       Type: CNAME
       TTL: 300
       ResourceRecords:
@@ -85,7 +95,13 @@ Resources:
     Type: "AWS::Route53::RecordSet"
     Properties:
       HostedZoneId: !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-id}}"
-      Name: !Sub "${SESDomainIdentity.DkimDNSTokenName3}._domainkey.${DomainName}"
+      # Name: !Sub "${SESDomainIdentity.DkimDNSTokenName3}._domainkey.${DomainName}"
+      Name:
+        !Join
+          - ""
+          - - !GetAtt SESDomainIdentity.DkimDNSTokenName3
+            - ._domainkey.
+            - !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-name}}"
       Type: CNAME
       TTL: 300
       ResourceRecords:
@@ -95,7 +111,7 @@ Resources:
     Type: "AWS::Route53::RecordSet"
     Properties:
       HostedZoneId: !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-id}}"
-      Name: !Ref DomainName
+      Name: !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-name}}"
       Type: MX
       TTL: 300
       ResourceRecords:
