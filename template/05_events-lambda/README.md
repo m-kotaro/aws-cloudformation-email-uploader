@@ -14,8 +14,6 @@ CDNの構築。
 
 ```bash
 SYSTEM_ENV=# your system env
-USER=# your credential user
-PASSWORD=# your credential password
 ```
 
 ---
@@ -26,6 +24,5 @@ PASSWORD=# your credential password
 
 ```bash
 aws cloudformation create-stack --stack-name stack-email-uploader-$SYSTEM_ENV-events-lambda --template-body file://template/05_events-lambda/51_events-lambda.yml --parameters ParameterKey=SystemEnv,ParameterValue=$SYSTEM_ENV --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM
-
 
 ```
