@@ -33,7 +33,7 @@
 
 下記手順を参照にGitHubよりzipをダウンロードし、CloudShellにアップロードしてください。
 
-[](upload-template.md)
+[](./upload-template.md)
 
 その後各フォルダのReadmeを参照してください。
 
