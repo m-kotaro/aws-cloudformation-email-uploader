@@ -47,10 +47,12 @@ Resources:
                   - !Sub "arn:aws:s3:::s3-${SystemCode}-${SystemEnv}-ses/*"
               - Effect: Allow
                 Action:
+                  - "cloudfront:CreateInvalidation"
                   - "cloudfront:GetDistribution"
                   - "cloudfront:GetDistributionConfig"
                   - "cloudfront:UpdateDistribution"
                 Resource: "*"
+                # Resource: !Sub  arn:aws:cloudfront::${AWS::AccountId}:distribution/${DISTRIBUTION_ID}
 
   LambdaFunctionSesFileUpload:
     Type: "AWS::Lambda::Function"
@@ -63,42 +65,41 @@ Resources:
       Code:
         ZipFile: |
           import boto3
-          import email
           from email import policy
           from email.parser import BytesParser
-          import os
           import boto3
           import time
           import mimetypes
-
 
           s3 = boto3.client('s3')
           # DESTINATION_BUCKET = os.environ['DEST_BUCKET']  # 環境変数で出力先S3バケットを指定
           DESTINATION_BUCKET = "s3-email-uploader-hogehoge-contents-asset"
           DISTRIBUTION_ID = "E2AX6JR0N8RXHK"
+          PATHS_TO_INVALIDATE = ['/*']
+
 
           def handler(event, context):
               print("Event:", event)
-              
+
               # イベントからS3情報を取得
               detail = event['detail']
               src_bucket = detail['bucket']['name']
               src_key = detail['object']['key']
-              
+
               # メールオブジェクトを取得
               response = s3.get_object(Bucket=src_bucket, Key=src_key)
               raw_email = response['Body'].read()
 
               # EMLをパース
               msg = BytesParser(policy=policy.default).parsebytes(raw_email)
-              
+
               attachments_saved = []
 
               # パーツをチェックして添付ファイルを探す
               for part in msg.iter_attachments():
                   filename = part.get_filename()
                   if not filename:
-                      continue  # ファイル名がないパートはスキップ
+                      continue
 
                   content = part.get_payload(decode=True)
                   dest_key = f"{filename}"
@@ -117,18 +118,33 @@ Resources:
                   )
                   attachments_saved.append(dest_key)
 
-                  update_default_root_object(DISTRIBUTION_ID, filename)
+                  update_default_root_object(DISTRIBUTION_ID, dest_key)
 
               wait_for_cloudfront_deployment(
-                distribution_id=DISTRIBUTION_ID,
-                interval=30,
-                timeout=600
+                  distribution_id=DISTRIBUTION_ID,
+                  interval=30,
+                  timeout=600
+              )
+
+              client = boto3.client('cloudfront')
+
+              # キャッシュの無効化（インバリデーション）を作成
+              client.create_invalidation(
+                  DistributionId=DISTRIBUTION_ID,
+                  InvalidationBatch={
+                      'Paths': {
+                          'Quantity': len(PATHS_TO_INVALIDATE),
+                          'Items': PATHS_TO_INVALIDATE
+                      },
+                      'CallerReference': 'invalidate-' + str(hash(str(PATHS_TO_INVALIDATE)))
+                  }
               )
 
               return {
                   'statusCode': 200,
                   'body': f'Saved attachments: {attachments_saved}'
               }
+
 
           def update_default_root_object(distribution_id, new_root_object):
               client = boto3.client('cloudfront')
