@@ -9,7 +9,7 @@ S3の構築。
 ## 環境変数設定
 
 ```bash
-SYSTEM_ENV=# your system env
+SYSTEM_ENV=  # Your system environment (e.g., dev, stg, prd, 000, 111)
 
 ```
 
