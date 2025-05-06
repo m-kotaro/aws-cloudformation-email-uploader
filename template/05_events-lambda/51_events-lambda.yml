@@ -20,7 +20,7 @@ Resources:
     Properties:
       RoleName: !Sub "role-${SystemCode}-${SystemEnv}-file-upload-lambda"
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
@@ -29,17 +29,28 @@ Resources:
       Policies:
         - PolicyName: LambdaS3EventPolicy
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
-              - Effect: Allow
+              - Effect: "Allow"
                 Action:
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
                 Resource: arn:aws:logs:*:*:*
               - Effect: Allow
                 Action:
-                  - s3:GetObject
-                Resource: { Fn::ImportValue: !Sub "s3-${SystemCode}-${SystemEnv}-ses-arn" }
+                  - "s3:GetObject"
+                  - "s3:PutObject"
+                Resource:
+                  - !Sub "arn:aws:s3:::s3-${SystemCode}-${SystemEnv}-contents-asset/"
+                  - !Sub "arn:aws:s3:::s3-${SystemCode}-${SystemEnv}-contents-asset/*"
+                  - !Sub "arn:aws:s3:::s3-${SystemCode}-${SystemEnv}-ses/"
+                  - !Sub "arn:aws:s3:::s3-${SystemCode}-${SystemEnv}-ses/*"
+              - Effect: Allow
+                Action:
+                  - "cloudfront:GetDistribution"
+                  - "cloudfront:GetDistributionConfig"
+                  - "cloudfront:UpdateDistribution"
+                Resource: "*"
 
   LambdaFunctionSesFileUpload:
     Type: "AWS::Lambda::Function"
@@ -48,10 +59,119 @@ Resources:
       Handler: index.handler
       Role: !GetAtt IAMRoleLambdaSesFileUpload.Arn
       Runtime: python3.13
+      Timeout: 600
       Code:
         ZipFile: |
+          import boto3
+          import email
+          from email import policy
+          from email.parser import BytesParser
+          import os
+          import boto3
+          import time
+          import mimetypes
+
+
+          s3 = boto3.client('s3')
+          # DESTINATION_BUCKET = os.environ['DEST_BUCKET']  # 環境変数で出力先S3バケットを指定
+          DESTINATION_BUCKET = "s3-email-uploader-hogehoge-contents-asset"
+          DISTRIBUTION_ID = "E2AX6JR0N8RXHK"
+
           def handler(event, context):
-              print("hello world")
+              print("Event:", event)
+              
+              # イベントからS3情報を取得
+              detail = event['detail']
+              src_bucket = detail['bucket']['name']
+              src_key = detail['object']['key']
+              
+              # メールオブジェクトを取得
+              response = s3.get_object(Bucket=src_bucket, Key=src_key)
+              raw_email = response['Body'].read()
+
+              # EMLをパース
+              msg = BytesParser(policy=policy.default).parsebytes(raw_email)
+              
+              attachments_saved = []
+
+              # パーツをチェックして添付ファイルを探す
+              for part in msg.iter_attachments():
+                  filename = part.get_filename()
+                  if not filename:
+                      continue  # ファイル名がないパートはスキップ
+
+                  content = part.get_payload(decode=True)
+                  dest_key = f"{filename}"
+
+                  # 拡張子から Content-Type を推測
+                  content_type, _ = mimetypes.guess_type(filename)
+                  if content_type is None:
+                      content_type = "application/octet-stream"
+
+                  # 添付ファイルを別バケットに保存
+                  s3.put_object(
+                      Bucket=DESTINATION_BUCKET,
+                      Key=dest_key,
+                      Body=content,
+                      ContentType=content_type
+                  )
+                  attachments_saved.append(dest_key)
+
+                  update_default_root_object(DISTRIBUTION_ID, filename)
+
+              wait_for_cloudfront_deployment(
+                distribution_id=DISTRIBUTION_ID,
+                interval=30,
+                timeout=600
+              )
+
+              return {
+                  'statusCode': 200,
+                  'body': f'Saved attachments: {attachments_saved}'
+              }
+
+          def update_default_root_object(distribution_id, new_root_object):
+              client = boto3.client('cloudfront')
+
+              # 現在のディストリビューション設定を取得
+              response = client.get_distribution_config(Id=distribution_id)
+              config = response['DistributionConfig']
+              etag = response['ETag']
+
+              # DefaultRootObject を変更
+              config['DefaultRootObject'] = new_root_object
+
+              # ディストリビューション設定を更新
+              result = client.update_distribution(
+                  Id=distribution_id,
+                  IfMatch=etag,
+                  DistributionConfig=config
+              )
+
+              print("DefaultRootObject updated to:", new_root_object)
+              print("Status:", result['Distribution']['Status'])
+
+
+          def wait_for_cloudfront_deployment(distribution_id, interval=30, timeout=900):
+              client = boto3.client('cloudfront')
+              waited = 0
+
+              while waited < timeout:
+                  response = client.get_distribution(Id=distribution_id)
+                  status = response['Distribution']['Status']
+                  print(f"Current status: {status} (waited {waited}s)")
+
+                  if status == 'Deployed':
+                      print("✅ Deployment completed.")
+                      return True
+
+                  time.sleep(interval)
+                  waited += interval
+
+              print("❌ Timeout waiting for deployment.")
+              return False
+
+
 
   EventsRuleSesS3FileCreated:
     Type: "AWS::Events::Rule"
