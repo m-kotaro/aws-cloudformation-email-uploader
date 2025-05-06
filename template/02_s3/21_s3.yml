@@ -47,4 +47,13 @@ Outputs:
     Value: !GetAtt S3BucketSes.Arn
     Export:
       Name: !Sub "s3-${SystemCode}-${SystemEnv}-ses-arn"
+  S3BucketContentsAsset:
+    Value: !Ref S3BucketContentsAsset
+    Export:
+      Name: !Sub "s3-${SystemCode}-${SystemEnv}-contents-asset"
+  S3BucketContentsAssetArn:
+    Value: !GetAtt S3BucketContentsAsset.Arn
+    Export:
+      Name: !Sub "s3-${SystemCode}-${SystemEnv}-contents-asset-arn"
+
 

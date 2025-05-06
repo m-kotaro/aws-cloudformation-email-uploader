@@ -39,7 +39,9 @@ Resources:
               - Effect: Allow
                 Action:
                   - s3:GetObject
-                Resource: { Fn::ImportValue: !Sub "s3-${SystemCode}-${SystemEnv}-ses-arn" }
+                Resource:
+                  - { Fn::ImportValue: !Sub "s3-${SystemCode}-${SystemEnv}-ses-arn" }
+                  - { Fn::ImportValue: !Sub "s3-${SystemCode}-${SystemEnv}-ses-arn" }
 
   LambdaFunctionSesFileUpload:
     Type: "AWS::Lambda::Function"
