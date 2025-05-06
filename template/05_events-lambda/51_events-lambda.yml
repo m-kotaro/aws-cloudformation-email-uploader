@@ -56,19 +56,27 @@ Resources:
                 Action:
                   - "cloudfront:ListDistributions"
                 Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "ssm:GetParameter"
+                Resource: !Sub "arn:aws:ssm:ap-northeast-1:${AWS::AccountId}:parameter/param-${SystemCode}-${SystemEnv}-allowed-email-addresses"
 
   LambdaFunctionSesFileUpload:
     Type: "AWS::Lambda::Function"
+    DependsOn:
+      - SSMParameterAllowedEmailAddresses
     Properties:
       FunctionName: !Sub "lambda-${SystemCode}-${SystemEnv}-file-upload"
       Handler: index.handler
       Role: !GetAtt IAMRoleLambdaSesFileUpload.Arn
       Runtime: python3.13
-      Timeout: 600
+      Timeout: 900
       Environment:
         Variables:
           DEST_BUCKET: !Sub "s3-${SystemCode}-${SystemEnv}-contents-asset"
           DISTRIBUTION_COMMENT: !Sub "cloudfront-${SystemCode}-${SystemEnv}"
+          PARAM_ALLOWED_EMAIL_ADDRESSES: !Ref SSMParameterAllowedEmailAddresses
+          SES_DOMAIN: !Sub "{{resolve:ssm:param-${SystemCode}-${SystemEnv}-hostedzone-name}}"
       Code:
         ZipFile: |
           import mimetypes
@@ -76,116 +84,189 @@ Resources:
           import time
           from email import policy
           from email.parser import BytesParser
+          from email.utils import parseaddr
 
           import boto3
 
-          s3 = boto3.client('s3')
-          DESTINATION_BUCKET = os.environ['DEST_BUCKET']  # 環境変数で出力先S3バケットを指定
+          # --- 環境変数 ---
+          DESTINATION_BUCKET = os.environ['DEST_BUCKET']
           DISTRIBUTION_COMMENT = os.environ['DISTRIBUTION_COMMENT']
+          SES_FROM_DOMAIN = os.environ['SES_DOMAIN']
+          PARAM_NAME = os.environ['PARAM_ALLOWED_EMAIL_ADDRESSES']
+
+          # --- 固定値 ---
           PATHS_TO_INVALIDATE = ['/*']
+          SES_FROM_ADDRESS = f"no-reply@{SES_FROM_DOMAIN}"
+
+          # --- クライアント共通化 ---
+          s3 = boto3.client('s3')
+          cloudfront = boto3.client('cloudfront')
+          ssm = boto3.client('ssm')
+          ses = boto3.client('ses')
 
 
           def handler(event, context):
               print("Event:", event)
 
-              # イベントからS3情報を取得
+              src_bucket, src_key = extract_s3_info(event)
+              raw_email = get_raw_email(src_bucket, src_key)
+              sender_email = extract_from_address(raw_email)
+              print(f"sender: {sender_email}")
+
+              if not sender_email:
+                  print(f"❌ Invalid email: no sender found")
+                  return {'statusCode': 400, 'body': 'Invalid email: no sender found'}
+
+              if not is_authorized_sender(sender_email):
+                  print(f"❌ error: Unauthorized sender")
+                  return {'statusCode': 403, 'body': 'error: Unauthorized sender'}
+
+              attachments = get_email_attachments(raw_email)
+              distribution_id = get_distribution_id_by_comment(DISTRIBUTION_COMMENT)
+
+              if not distribution_id:
+                  print(f"❌ CloudFront distribution not found.")
+                  return {'statusCode': 500, 'body': 'CloudFront distribution not found.'}
+
+              uploaded_files = []
+              for filename, content in attachments:
+                  upload_to_s3(filename, content)
+                  update_distribution_root(distribution_id, filename)
+                  uploaded_files.append(filename)
+
+              wait_for_deployment(distribution_id)
+              create_invalidation(distribution_id)
+
+              send_notification_email(SES_FROM_ADDRESS, sender_email)
+              
+              print(f"✅ Saved attachments: {uploaded_files}.")
+              return {'statusCode': 200, 'body': f'Saved attachments: {uploaded_files}'}
+
+
+          def extract_s3_info(event):
               detail = event['detail']
-              src_bucket = detail['bucket']['name']
-              src_key = detail['object']['key']
+              return detail['bucket']['name'], detail['object']['key']
 
-              # メールオブジェクトを取得
-              response = s3.get_object(Bucket=src_bucket, Key=src_key)
-              raw_email = response['Body'].read()
 
-              # EMLをパース
+          def get_raw_email(bucket, key):
+              response = s3.get_object(Bucket=bucket, Key=key)
+              return response['Body'].read()
+
+
+          def upload_to_s3(filename, content):
+              content_type, _ = mimetypes.guess_type(filename)
+              content_type = content_type or "application/octet-stream"
+
+              s3.put_object(
+                  Bucket=DESTINATION_BUCKET,
+                  Key=filename,
+                  Body=content,
+                  ContentType=content_type
+              )
+
+
+
+          def extract_from_address(raw_email):
               msg = BytesParser(policy=policy.default).parsebytes(raw_email)
+              from_header = msg.get('From')
+              if not from_header:
+                  return None
 
-              attachments_saved = []
+              _, email_address = parseaddr(from_header)
+              return email_address.strip().lower() if email_address else None
 
-              distribution_id = get_first_distribution_id_by_comment(DISTRIBUTION_COMMENT)
+          def get_email_attachments(raw_email):
+              msg = BytesParser(policy=policy.default).parsebytes(raw_email)
+              attachments = []
 
-              # パーツをチェックして添付ファイルを探す
               for part in msg.iter_attachments():
                   filename = part.get_filename()
-                  if not filename:
-                      continue
+                  if filename:
+                      content = part.get_payload(decode=True)
+                      attachments.append((filename, content))
 
-                  content = part.get_payload(decode=True)
-                  dest_key = f"{filename}"
-
-                  # 拡張子から Content-Type を推測
-                  content_type, _ = mimetypes.guess_type(filename)
-                  if content_type is None:
-                      content_type = "application/octet-stream"
-
-                  # 添付ファイルを別バケットに保存
-                  s3.put_object(Bucket=DESTINATION_BUCKET, Key=dest_key, Body=content, ContentType=content_type)
-                  attachments_saved.append(dest_key)
+              return attachments
 
 
-                  update_default_root_object(distribution_id, dest_key)
-
-              wait_for_cloudfront_deployment(distribution_id=distribution_id, interval=30, timeout=600)
-
-              client = boto3.client('cloudfront')
-
-              # キャッシュの無効化（インバリデーション）を作成
-              client.create_invalidation(DistributionId=distribution_id, InvalidationBatch={
-                  'Paths': {'Quantity': len(PATHS_TO_INVALIDATE), 'Items': PATHS_TO_INVALIDATE},
-                  'CallerReference': 'invalidate-' + str(hash(str(PATHS_TO_INVALIDATE)))})
-
-              return {'statusCode': 200, 'body': f'Saved attachments: {attachments_saved}'}
+          def get_distribution_id_by_comment(comment):
+              paginator = cloudfront.get_paginator('list_distributions')
+              for page in paginator.paginate():
+                  for dist in page.get('DistributionList', {}).get('Items', []):
+                      if dist.get('Comment', '') == comment:
+                          return dist.get('Id')
+              return None
 
 
-          def update_default_root_object(distribution_id, new_root_object):
-              client = boto3.client('cloudfront')
-
-              # 現在のディストリビューション設定を取得
-              response = client.get_distribution_config(Id=distribution_id)
-              config = response['DistributionConfig']
-              etag = response['ETag']
-
-              # DefaultRootObject を変更
+          def update_distribution_root(distribution_id, new_root_object):
+              config_resp = cloudfront.get_distribution_config(Id=distribution_id)
+              config = config_resp['DistributionConfig']
               config['DefaultRootObject'] = new_root_object
 
-              # ディストリビューション設定を更新
-              result = client.update_distribution(Id=distribution_id, IfMatch=etag, DistributionConfig=config)
+              cloudfront.update_distribution(
+                  Id=distribution_id,
+                  IfMatch=config_resp['ETag'],
+                  DistributionConfig=config
+              )
+              print(f"✅ Updated DefaultRootObject to: {new_root_object}")
 
-              print("DefaultRootObject updated to:", new_root_object)
-              print("Status:", result['Distribution']['Status'])
 
-
-          def wait_for_cloudfront_deployment(distribution_id, interval=30, timeout=900):
-              client = boto3.client('cloudfront')
+          def wait_for_deployment(distribution_id, interval=30, timeout=600):
               waited = 0
-
               while waited < timeout:
-                  response = client.get_distribution(Id=distribution_id)
-                  status = response['Distribution']['Status']
-                  print(f"Current status: {status} (waited {waited}s)")
-
+                  status = cloudfront.get_distribution(Id=distribution_id)['Distribution']['Status']
+                  print(f"Waiting... {status} ({waited}s)")
                   if status == 'Deployed':
                       print("✅ Deployment completed.")
-                      return True
-
+                      return
                   time.sleep(interval)
                   waited += interval
-
-              print("❌ Timeout waiting for deployment.")
-              return False
+              print("❌ Timeout waiting for CloudFront deployment")
 
 
-          def get_first_distribution_id_by_comment(target_comment: str):
-              client = boto3.client('cloudfront')
+          def create_invalidation(distribution_id):
+              cloudfront.create_invalidation(
+                  DistributionId=distribution_id,
+                  InvalidationBatch={
+                      'Paths': {
+                          'Quantity': len(PATHS_TO_INVALIDATE),
+                          'Items': PATHS_TO_INVALIDATE
+                      },
+                      'CallerReference': f'invalidate-{int(time.time())}'
+                  }
+              )
+              print("✅ Created invalidation request.")
 
-              paginator = client.get_paginator('list_distributions')
-              for page in paginator.paginate():
-                  items = page.get('DistributionList', {}).get('Items', [])
-                  for dist in items:
-                      if dist.get('Comment', '') == target_comment:
-                          return dist.get('Id')
 
-              return None
+          def send_notification_email(from_address, to_address):
+              subject = "ファイルがアップロードされました"
+              body = "完了通知"
+
+              response = ses.send_email(
+                  Source=from_address,
+                  Destination={'ToAddresses': [to_address]},
+                  Message={
+                      'Subject': {'Data': subject},
+                      'Body': {'Text': {'Data': body}}
+                  }
+              )
+              print("✅ 通知メールを送信しました:", response['MessageId'])
+
+
+          def is_authorized_sender(sender_email):
+              try:
+                  response = ssm.get_parameter(Name=PARAM_NAME)
+                  raw_value = response['Parameter']['Value']
+              except ssm.exceptions.ParameterNotFound:
+                  print(f"❌ パラメータ {PARAM_NAME} が見つかりません")
+                  return False
+
+              allowed_emails = [
+                  email.strip().lower()
+                  for email in raw_value.replace(',', '\n').splitlines()
+                  if email.strip()
+              ]
+
+              return sender_email.strip().lower() in allowed_emails
 
 
 
@@ -214,3 +295,15 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt EventsRuleSesS3FileCreated.Arn
+
+
+  SSMParameterAllowedEmailAddresses:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Name: !Sub "param-${SystemCode}-${SystemEnv}-allowed-email-addresses"
+      Type: String
+      Value: |
+        user1@example.com
+        user2@example.com
+        user3@example.com
+      Tier: Standard
