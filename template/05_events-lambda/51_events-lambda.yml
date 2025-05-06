@@ -47,9 +47,14 @@ Resources:
                   - !Sub "arn:aws:s3:::s3-${SystemCode}-${SystemEnv}-ses/*"
               - Effect: Allow
                 Action:
+                  - "cloudfront:CreateInvalidation"
                   - "cloudfront:GetDistribution"
                   - "cloudfront:GetDistributionConfig"
                   - "cloudfront:UpdateDistribution"
+                Resource: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/*"
+              - Effect: Allow
+                Action:
+                  - "cloudfront:ListDistributions"
                 Resource: "*"
 
   LambdaFunctionSesFileUpload:
@@ -60,45 +65,50 @@ Resources:
       Role: !GetAtt IAMRoleLambdaSesFileUpload.Arn
       Runtime: python3.13
       Timeout: 600
+      Environment:
+        Variables:
+          DEST_BUCKET: !Sub "s3-${SystemCode}-${SystemEnv}-contents-asset"
+          DISTRIBUTION_COMMENT: !Sub "cloudfront-${SystemCode}-${SystemEnv}"
       Code:
         ZipFile: |
-          import boto3
-          import email
+          import mimetypes
+          import os
+          import time
           from email import policy
           from email.parser import BytesParser
-          import os
-          import boto3
-          import time
-          import mimetypes
 
+          import boto3
 
           s3 = boto3.client('s3')
-          # DESTINATION_BUCKET = os.environ['DEST_BUCKET']  # 環境変数で出力先S3バケットを指定
-          DESTINATION_BUCKET = "s3-email-uploader-hogehoge-contents-asset"
-          DISTRIBUTION_ID = "E2AX6JR0N8RXHK"
+          DESTINATION_BUCKET = os.environ['DEST_BUCKET']  # 環境変数で出力先S3バケットを指定
+          DISTRIBUTION_COMMENT = os.environ['DISTRIBUTION_COMMENT']
+          PATHS_TO_INVALIDATE = ['/*']
+
 
           def handler(event, context):
               print("Event:", event)
-              
+
               # イベントからS3情報を取得
               detail = event['detail']
               src_bucket = detail['bucket']['name']
               src_key = detail['object']['key']
-              
+
               # メールオブジェクトを取得
               response = s3.get_object(Bucket=src_bucket, Key=src_key)
               raw_email = response['Body'].read()
 
               # EMLをパース
               msg = BytesParser(policy=policy.default).parsebytes(raw_email)
-              
+
               attachments_saved = []
+
+              distribution_id = get_first_distribution_id_by_comment(DISTRIBUTION_COMMENT)
 
               # パーツをチェックして添付ファイルを探す
               for part in msg.iter_attachments():
                   filename = part.get_filename()
                   if not filename:
-                      continue  # ファイル名がないパートはスキップ
+                      continue
 
                   content = part.get_payload(decode=True)
                   dest_key = f"{filename}"
@@ -109,26 +119,23 @@ Resources:
                       content_type = "application/octet-stream"
 
                   # 添付ファイルを別バケットに保存
-                  s3.put_object(
-                      Bucket=DESTINATION_BUCKET,
-                      Key=dest_key,
-                      Body=content,
-                      ContentType=content_type
-                  )
+                  s3.put_object(Bucket=DESTINATION_BUCKET, Key=dest_key, Body=content, ContentType=content_type)
                   attachments_saved.append(dest_key)
 
-                  update_default_root_object(DISTRIBUTION_ID, filename)
 
-              wait_for_cloudfront_deployment(
-                distribution_id=DISTRIBUTION_ID,
-                interval=30,
-                timeout=600
-              )
+                  update_default_root_object(distribution_id, dest_key)
 
-              return {
-                  'statusCode': 200,
-                  'body': f'Saved attachments: {attachments_saved}'
-              }
+              wait_for_cloudfront_deployment(distribution_id=distribution_id, interval=30, timeout=600)
+
+              client = boto3.client('cloudfront')
+
+              # キャッシュの無効化（インバリデーション）を作成
+              client.create_invalidation(DistributionId=distribution_id, InvalidationBatch={
+                  'Paths': {'Quantity': len(PATHS_TO_INVALIDATE), 'Items': PATHS_TO_INVALIDATE},
+                  'CallerReference': 'invalidate-' + str(hash(str(PATHS_TO_INVALIDATE)))})
+
+              return {'statusCode': 200, 'body': f'Saved attachments: {attachments_saved}'}
+
 
           def update_default_root_object(distribution_id, new_root_object):
               client = boto3.client('cloudfront')
@@ -142,11 +149,7 @@ Resources:
               config['DefaultRootObject'] = new_root_object
 
               # ディストリビューション設定を更新
-              result = client.update_distribution(
-                  Id=distribution_id,
-                  IfMatch=etag,
-                  DistributionConfig=config
-              )
+              result = client.update_distribution(Id=distribution_id, IfMatch=etag, DistributionConfig=config)
 
               print("DefaultRootObject updated to:", new_root_object)
               print("Status:", result['Distribution']['Status'])
@@ -170,6 +173,19 @@ Resources:
 
               print("❌ Timeout waiting for deployment.")
               return False
+
+
+          def get_first_distribution_id_by_comment(target_comment: str):
+              client = boto3.client('cloudfront')
+
+              paginator = client.get_paginator('list_distributions')
+              for page in paginator.paginate():
+                  items = page.get('DistributionList', {}).get('Items', [])
+                  for dist in items:
+                      if dist.get('Comment', '') == target_comment:
+                          return dist.get('Id')
+
+              return None
 
 
 
