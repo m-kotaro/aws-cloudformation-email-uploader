@@ -47,7 +47,9 @@ Resources:
                   - !Sub "arn:aws:s3:::s3-${SystemCode}-${SystemEnv}-ses/*"
               - Effect: Allow
                 Action:
+                  - "cloudfront:GetDistribution"
                   - "cloudfront:GetDistributionConfig"
+                  - "cloudfront:UpdateDistribution"
                 Resource: "*"
 
   LambdaFunctionSesFileUpload:
@@ -57,6 +59,7 @@ Resources:
       Handler: index.handler
       Role: !GetAtt IAMRoleLambdaSesFileUpload.Arn
       Runtime: python3.13
+      Timeout: 600
       Code:
         ZipFile: |
           import boto3
@@ -64,6 +67,10 @@ Resources:
           from email import policy
           from email.parser import BytesParser
           import os
+          import boto3
+          import time
+          import mimetypes
+
 
           s3 = boto3.client('s3')
           # DESTINATION_BUCKET = os.environ['DEST_BUCKET']  # 環境変数で出力先S3バケットを指定
@@ -96,15 +103,27 @@ Resources:
                   content = part.get_payload(decode=True)
                   dest_key = f"{filename}"
 
+                  # 拡張子から Content-Type を推測
+                  content_type, _ = mimetypes.guess_type(filename)
+                  if content_type is None:
+                      content_type = "application/octet-stream"
+
                   # 添付ファイルを別バケットに保存
                   s3.put_object(
                       Bucket=DESTINATION_BUCKET,
                       Key=dest_key,
-                      Body=content
+                      Body=content,
+                      ContentType=content_type
                   )
                   attachments_saved.append(dest_key)
 
                   update_default_root_object(DISTRIBUTION_ID, filename)
+
+              wait_for_cloudfront_deployment(
+                distribution_id=DISTRIBUTION_ID,
+                interval=30,
+                timeout=600
+              )
 
               return {
                   'statusCode': 200,
@@ -131,6 +150,26 @@ Resources:
 
               print("DefaultRootObject updated to:", new_root_object)
               print("Status:", result['Distribution']['Status'])
+
+
+          def wait_for_cloudfront_deployment(distribution_id, interval=30, timeout=900):
+              client = boto3.client('cloudfront')
+              waited = 0
+
+              while waited < timeout:
+                  response = client.get_distribution(Id=distribution_id)
+                  status = response['Distribution']['Status']
+                  print(f"Current status: {status} (waited {waited}s)")
+
+                  if status == 'Deployed':
+                      print("✅ Deployment completed.")
+                      return True
+
+                  time.sleep(interval)
+                  waited += interval
+
+              print("❌ Timeout waiting for deployment.")
+              return False
 
 
 
